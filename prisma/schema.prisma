@@ -1,0 +1,167 @@
+// Prisma schema — Triagem Eazy
+// docs/PRD.md tem o contexto de produto por tras destes modelos.
+// Colunas mapeadas para snake_case (identificadores minusculos sao mais
+// portaveis entre Prisma, RLS policies e o dashboard do Supabase).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PACIENTE
+  PROFISSIONAL
+  ADMIN
+
+  @@map("user_role")
+}
+
+enum FilaStatus {
+  EM_ANALISE
+  CHAMADO
+  EM_ATENDIMENTO
+  FINALIZADO
+  CANCELADO
+
+  @@map("fila_status")
+}
+
+enum NotificacaoTipo {
+  CADASTRO_APROVADO
+  CHAMADA_DESLOCAMENTO
+  STATUS_ATUALIZADO
+  SISTEMA
+
+  @@map("notificacao_tipo")
+}
+
+model Hospital {
+  id                       String   @id @default(cuid())
+  nome                     String
+  slug                     String   @unique
+  tempoMedioAtendimentoMin Int      @default(20) @map("tempo_medio_atendimento_min")
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  users       User[]
+  filaEntries FilaEntry[]
+
+  @@map("hospitais")
+}
+
+/// Espelha auth.users do Supabase — id compartilhado com o usuario autenticado.
+model User {
+  id         String    @id
+  email      String    @unique
+  nome       String
+  role       UserRole  @default(PACIENTE)
+  hospitalId String?   @map("hospital_id")
+  hospital   Hospital? @relation(fields: [hospitalId], references: [id])
+  ativo      Boolean   @default(true)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  paciente         Paciente?
+  filaAtualizacoes FilaEntry[]   @relation("StaffAtualizouFila")
+  notificacoes     Notificacao[]
+  auditLogs        AuditLog[]
+
+  @@index([hospitalId])
+  @@map("usuarios")
+}
+
+model Paciente {
+  id             String   @id @default(cuid())
+  userId         String   @unique @map("user_id")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cpf            String   @unique
+  dataNascimento DateTime @map("data_nascimento") @db.Date
+  telefone       String
+  convenio       String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  preTriagens PreTriagem[]
+  filaEntries FilaEntry[]
+
+  @@map("pacientes")
+}
+
+model PreTriagem {
+  id              String   @id @default(cuid())
+  pacienteId      String   @map("paciente_id")
+  paciente        Paciente @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  queixaPrincipal String   @map("queixa_principal")
+  sintomas        String[]
+  descricaoLivre  String?  @map("descricao_livre")
+  duracaoSintomas String?  @map("duracao_sintomas")
+  nivelDor        Int?     @map("nivel_dor")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  filaEntry FilaEntry?
+
+  @@index([pacienteId])
+  @@map("pre_triagens")
+}
+
+model FilaEntry {
+  id                    String     @id @default(cuid())
+  hospitalId            String     @map("hospital_id")
+  hospital              Hospital   @relation(fields: [hospitalId], references: [id])
+  pacienteId            String     @map("paciente_id")
+  paciente              Paciente   @relation(fields: [pacienteId], references: [id])
+  preTriagemId          String     @unique @map("pre_triagem_id")
+  preTriagem            PreTriagem @relation(fields: [preTriagemId], references: [id])
+  status                FilaStatus @default(EM_ANALISE)
+  observacoesStaff      String?    @map("observacoes_staff")
+  updatedByUserId       String?    @map("updated_by_user_id")
+  updatedByUser         User?      @relation("StaffAtualizouFila", fields: [updatedByUserId], references: [id])
+  chamadoAt             DateTime?  @map("chamado_at") @db.Timestamptz(3)
+  atendimentoIniciadoEm DateTime?  @map("atendimento_iniciado_em") @db.Timestamptz(3)
+  finalizadoEm          DateTime?  @map("finalizado_em") @db.Timestamptz(3)
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  notificacoes Notificacao[]
+
+  @@index([hospitalId, status])
+  @@index([pacienteId])
+  @@index([updatedByUserId])
+  @@map("fila_entries")
+}
+
+model Notificacao {
+  id          String          @id @default(cuid())
+  userId      String          @map("user_id")
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  filaEntryId String?         @map("fila_entry_id")
+  filaEntry   FilaEntry?      @relation(fields: [filaEntryId], references: [id], onDelete: SetNull)
+  tipo        NotificacaoTipo
+  titulo      String
+  mensagem    String
+  lida        Boolean         @default(false)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, lida])
+  @@index([filaEntryId])
+  @@map("notificacoes")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id])
+  acao       String
+  entidade   String
+  entidadeId String   @map("entidade_id")
+  detalhes   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([entidade, entidadeId])
+  @@index([userId])
+  @@map("audit_logs")
+}
