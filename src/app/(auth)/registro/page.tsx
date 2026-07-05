@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { TRPCClientError } from "@trpc/client";
 import { createClient } from "@/lib/supabase/client";
 import { trpc } from "@/lib/trpc/client";
+import { salvarPendingRegistro } from "@/lib/pending-registro";
 import type { AppRouter } from "@/server/routers/_app";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,6 +119,16 @@ export default function RegistroPage() {
       }
 
       if (!data.session) {
+        // Sem sessão ainda (confirmação de e-mail pendente) — guarda os
+        // dados de perfil para pré-preencher /completar-cadastro depois,
+        // já que o usuário não deveria precisar digitar tudo de novo.
+        salvarPendingRegistro({
+          nome: form.nome.trim(),
+          cpf: form.cpf,
+          dataNascimento: form.dataNascimento,
+          telefone: form.telefone.trim(),
+          convenio: form.convenio.trim(),
+        });
         setAguardandoConfirmacao(true);
         return;
       }

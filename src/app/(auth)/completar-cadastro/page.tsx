@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { TRPCClientError } from "@trpc/client";
 import { trpc } from "@/lib/trpc/client";
+import {
+  lerPendingRegistro,
+  limparPendingRegistro,
+} from "@/lib/pending-registro";
 import type { AppRouter } from "@/server/routers/_app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,7 +68,10 @@ export default function CompletarCadastroPage() {
   const router = useRouter();
   const meQuery = trpc.auth.me.useQuery();
   const registerMutation = trpc.patient.register.useMutation();
-  const [form, setForm] = useState<FormState>(initialState);
+  const [form, setForm] = useState<FormState>(
+    () => lerPendingRegistro() ?? initialState,
+  );
+  const [preenchidoAutomaticamente] = useState(() => lerPendingRegistro() !== null);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -97,6 +104,7 @@ export default function CompletarCadastroPage() {
         telefone: form.telefone.trim(),
         convenio: form.convenio.trim() || undefined,
       });
+      limparPendingRegistro();
       router.push("/paciente/triagem");
     } catch (mutationError) {
       if (mutationError instanceof TRPCClientError) {
@@ -107,6 +115,7 @@ export default function CompletarCadastroPage() {
           return;
         }
         if (code === "CONFLICT") {
+          limparPendingRegistro();
           router.replace("/paciente/fila");
           return;
         }
@@ -126,7 +135,9 @@ export default function CompletarCadastroPage() {
       <CardHeader>
         <CardTitle>Finalize seu cadastro</CardTitle>
         <CardDescription>
-          Sua conta já foi confirmada. Complete seus dados para continuar.
+          {preenchidoAutomaticamente
+            ? "Sua conta já foi confirmada. Já preenchemos com os dados que você enviou — confira e conclua."
+            : "Sua conta já foi confirmada. Complete seus dados para continuar."}
         </CardDescription>
       </CardHeader>
       <CardContent>
